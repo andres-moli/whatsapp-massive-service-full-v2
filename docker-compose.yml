@@ -1,0 +1,21 @@
+
+version: '3.8'
+
+services:
+  whatsapp-app:
+    build: .
+    container_name: whatsapp-service
+    ports:
+      - "3000:3000"
+    depends_on:
+      - redis
+    volumes:
+      - ./sessions:/app/.wwebjs_auth
+    environment:
+      - TZ=America/Bogota
+
+  redis:
+    image: redis:6-alpine
+    container_name: redis
+    ports:
+      - "6379:6379"
