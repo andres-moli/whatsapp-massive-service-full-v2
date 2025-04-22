@@ -7,6 +7,8 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { WsBatchDetail, WsBatchDetailStatus, WsBatchStatus } from 'src/entities/ws-batch-detail.entity';
 import { WsBatch } from 'src/entities/ws-bundle.entity';
+import { WsBatchLogRepository } from 'src/ws/repositories/ws-batch-log.repository';
+import { WsGateway } from 'src/ws/ws.gateway';
 
 @Injectable()
 export class WhatsappService {
@@ -17,6 +19,7 @@ export class WhatsappService {
     private readonly detailRepo: Repository<WsBatchDetail>,
     @InjectRepository(WsBatch)
     private readonly wsBatchRepo: Repository<WsBatch>,
+    private readonly wsGateway: WsGateway,
   ) {
     this.client = new Client({
       authStrategy: new LocalAuth(), // Usamos autenticación local para guardar la sesión
@@ -69,46 +72,101 @@ export class WhatsappService {
 
   // Método para enviar mensajes en bloques de 100, con 10 segundos de espera entre cada bloque
   async sendMassiveMessages(body: SendMassiveDto): Promise<void> {
-    const { phones, message } = body;
+    const { phones, message, bundleId } = body;
     const batchSize = 100;
     const subBatchSize = 1;
+    const totalMessages = phones.length;
+    let processedMessages = 0;
+  
+    const log = async (msg: string) => {
+      await this.wsGateway.saveLog(bundleId, msg);
+      this.wsGateway.sendLog(bundleId, msg);
+    };
+  
+    // Envía el progreso inicial (0%)
+    this.wsGateway.sendProgress(bundleId, {
+      current: 0,
+      total: totalMessages,
+      percentage: 0
+    });
   
     for (let i = 0; i < phones.length; i += batchSize) {
       const batch = phones.slice(i, i + batchSize);
-  
-      console.log(`📦 Procesando paquete de ${batch.length} números...`);
+      await log(`📦 Procesando paquete de ${batch.length} números (${i+1}-${Math.min(i+batchSize, totalMessages)}/${totalMessages})...`);
   
       for (let j = 0; j < batch.length; j += subBatchSize) {
         const subBatch = batch.slice(j, j + subBatchSize);
   
         for (const phone of subBatch) {
-          const numberPhone = phone.phone.replace(/\D/g, ''); // Limpiar el número de teléfono
+          const numberPhone = phone.phone.replace(/\D/g, '');
           try {
-            if(body.fileBase64 && body.fileMimeType && body.fileName) {
-              await this.sendSingleMessage({ phone: numberPhone, message, messageBase64: body.fileBase64, fileMimeType: body.fileMimeType, fileName: body.fileName });
-            }else {
-              await this.sendSingleMessage({ phone: numberPhone, message, });
+            const personalizedMessage = replacePlaceholders(message, phone.variables || {});
+            if (body.fileBase64 && body.fileMimeType && body.fileName) {
+              await this.sendSingleMessage({
+                phone: numberPhone,
+                message: personalizedMessage,
+                messageBase64: body.fileBase64,
+                fileMimeType: body.fileMimeType,
+                fileName: body.fileName,
+              });
+            } else {
+              await this.sendSingleMessage({ phone: numberPhone, message: personalizedMessage });
             }
-            // ✅ Actualizar estado a 'ENVIADO'
-            await this.detailRepo.update(phone.messageId, { estado: WsBatchDetailStatus.ENVIADO, error: null });
+  
+            await this.detailRepo.update(phone.messageId, {
+              estado: WsBatchDetailStatus.ENVIADO,
+              error: null,
+            });
+  
+            await log(`✅ Mensaje enviado a ${numberPhone}`);
           } catch (error) {
-            await this.detailRepo.update(phone.messageId, { estado: WsBatchDetailStatus.FALLIDO, error: (error as any)?.["message"] });
+            await this.detailRepo.update(phone.messageId, {
+              estado: WsBatchDetailStatus.FALLIDO,
+              error: (error as any)?.['message'],
+            });
+            await log(`❌ Error al enviar a ${numberPhone}: ${(error as any)?.['message']}`);
           }
+  
+          // Actualizar progreso después de cada mensaje
+          processedMessages++;
+          const percentage = Math.round((processedMessages / totalMessages) * 100);
+          this.wsGateway.sendProgress(bundleId, {
+            current: processedMessages,
+            total: totalMessages,
+            percentage: percentage
+          });
         }
   
         if (j + subBatchSize < batch.length) {
-          const delay = Math.floor(Math.random() * (15000 - 10000 + 1)) + 10000;
-          console.log(`⏳ Esperando ${delay / 1000} segundos antes del siguiente mensaje...`);
+          const delay = Math.floor(Math.random() * (132000 - 108000 + 1)) + 108000;
+          await log(`⏳ Esperando ${Math.round(delay / 1000)} segundos antes del siguiente mensaje...`);
           await new Promise((resolve) => setTimeout(resolve, delay));
         }
       }
   
       if (i + batchSize < phones.length) {
-        console.log(`✅ Paquete de 100 procesado. Continuando con el siguiente lote...`);
+        const batchDelay = Math.floor(Math.random() * (630000 - 570000 + 1)) + 570000;
+        await log(`🛑 Esperando ${Math.round(batchDelay / 1000 / 60)} minutos antes del siguiente lote...`);
+        await new Promise((resolve) => setTimeout(resolve, batchDelay));
       }
     }
-    await this.wsBatchRepo.update(body.bundleId, { estado: WsBatchStatus.COMPLETADO });
-    console.log(`🎉 Todos los mensajes han sido enviados.`);
+  
+    await this.wsBatchRepo.update(bundleId, { estado: WsBatchStatus.COMPLETADO });
+    await log(`🎉 Todos los mensajes han sido enviados.`);
+    
+    // Enviar progreso completado (100%)
+    this.wsGateway.sendProgress(bundleId, {
+      current: totalMessages,
+      total: totalMessages,
+      percentage: 100
+    });
   }
   
+  
+}
+function replacePlaceholders(message: string, variables: Record<string, string>): string {
+  return message.replace(/{(.*?)}/g, (_, key) => {
+    const value = variables[key];
+    return value ? value.toUpperCase() : `{${key}}`;
+  });
 }

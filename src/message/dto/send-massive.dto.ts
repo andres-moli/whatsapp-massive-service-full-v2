@@ -6,6 +6,18 @@ class PhoneMessageDto {
     description: 'Número de teléfono al que se enviará el mensaje',
   })
   phone: string;
+  @ApiProperty({
+    example: 'ANDRES',
+    description: 'Nomrbe de teléfono al que se enviará el mensaje',
+    required: false,
+  })
+  name?: string;
+  @ApiProperty({
+    example: { nombre: 'Andrés', producto: 'Laptop', fecha: '2024-04-21' },
+    description: 'Diccionario de variables para personalizar el mensaje',
+    required: false,
+  })
+  variables?: Record<string, string>;
 
   @ApiProperty({
     example: '0f8fad5b-d9cb-469f-a165-70867728950e',

@@ -4,6 +4,7 @@ import { MessageModule } from './message/message.module';
 import { ConfigModule, ConfigType } from '@nestjs/config';
 import config from './config';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { WsModule } from './ws/ws.module';
 @Module({
   imports: [
     ConfigModule.forRoot({
@@ -28,7 +29,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
         };
       },
     }),
-    WhatsappModule, MessageModule
+    WhatsappModule, MessageModule, WsModule
   ],
 })
 export class AppModule {}
