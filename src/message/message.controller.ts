@@ -3,6 +3,7 @@ import { ApiTags, ApiOperation, ApiResponse, ApiBody } from '@nestjs/swagger';
 import { MessageService } from './message.service';
 import { SendSingleDto } from './dto/send-single.dto';
 import { SendMassiveDto } from './dto/send-massive.dto';
+import { SendMessageDto } from 'src/whatsapp/send-message.dto';
 
 @ApiTags('Mensajes')
 @Controller('message')
@@ -25,5 +26,20 @@ export class MessageController {
   async sendMassive(@Body() body: SendMassiveDto) {
     await this.messageService.sendMassiveMessages(body);
     return { status: 'Messages sent successfully!' };
+  }
+  @Post('send-message')
+  @ApiOperation({ summary: 'Send a WhatsApp message' })
+  @ApiResponse({ status: 200, description: 'Message sent successfully' })
+  @ApiResponse({ status: 400, description: 'Bad request' })
+  @ApiResponse({ status: 500, description: 'Failed to send message' })
+  async sendMessage(@Body() body: SendMessageDto): Promise<string> {
+    const { number, message } = body;
+
+    try {
+      await this.messageService.sendMessage(number, message);
+      return 'Message sent successfully!';
+    } catch (error) {
+      throw new Error('Failed to send message: ' + error.message);
+    }
   }
 }

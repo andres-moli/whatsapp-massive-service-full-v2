@@ -13,4 +13,7 @@ export class MessageService {
   async sendSingleMessage(body: SendSingleDto) {
     await this.whatsappService.sendSingleMessage(body);
   }
+  async sendMessage(number: string, message: string) {
+    await this.whatsappService.sendMessage(number, message);
+  }
 }

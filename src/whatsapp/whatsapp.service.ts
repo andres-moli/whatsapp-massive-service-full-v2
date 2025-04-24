@@ -39,7 +39,18 @@ export class WhatsappService {
 
     this.client.initialize();
   }
+  async sendMessage(number: string, message: string): Promise<void> {
+    if (!number || !message) {
+        throw new Error('Number and message are required.');
+    }
 
+    try {
+        const chatId = `${number}@c.us`; // WhatsApp format for numbers
+        await this.client.sendMessage(chatId, message);
+    } catch (error) {
+        throw new Error('Failed to send message: ' + error.message);
+    }
+  }
   // Método para enviar un mensaje individual
   async sendSingleMessage({ phone, message, messageBase64, fileMimeType, fileName  }: { phone: string; message: string, messageBase64?: string;  fileMimeType?: string; fileName?: string;}) {
     try {
@@ -84,8 +95,7 @@ export class WhatsappService {
     };
   
     // Horario laboral permitido: 8 AM a 6 PM
-    const WORK_START_HOUR = 8;
-    const WORK_END_HOUR = 18;
+    const { WORK_START_HOUR, WORK_END_HOUR } = await this.getWorkHours();
   
     // Validación inicial de horario
     const now = new Date();
@@ -183,7 +193,24 @@ export class WhatsappService {
       percentage: 100,
     });
   }
-  
+  async getWorkHours(): Promise<{ WORK_START_HOUR: number; WORK_END_HOUR: number }> {
+    const params = await this.detailRepo.manager.query(`
+    SELECT
+      codigo, "valueInt"
+    FROM
+      grl_parameter
+    WHERE
+      codigo IN ('WORK_START_HOUR', 'WORK_END_HOUR')
+      AND "deletedAt" IS NULL;
+    `);
+
+    const map = new Map<string, number>(params?.map(p => [p?.codigo || '', parseInt(p?.valueInt || '0', 10)]));
+
+    const WORK_START_HOUR = map.get('WORK_START_HOUR') ?? 8;
+    const WORK_END_HOUR = map.get('WORK_END_HOUR') ?? 18;
+
+    return { WORK_START_HOUR, WORK_END_HOUR };
+  }
   
   
 }
