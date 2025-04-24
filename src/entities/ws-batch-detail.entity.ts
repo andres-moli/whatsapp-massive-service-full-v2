@@ -12,6 +12,7 @@ export enum WsBatchDetailStatus {
     ENTREGADO = 'ENTREGADO',
     FALLIDO = 'FALLIDO',
     PENDIENTE = 'PENDIENTE',
+    NO_ENTREGADO = 'NO_ENTREGADO',
 }
 @Entity('ws_batch_detail')
 export class WsBatchDetail {

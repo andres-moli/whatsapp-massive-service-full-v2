@@ -133,10 +133,11 @@ export class WhatsappService {
           }
   
           const numberPhone = phone.phone.replace(/\D/g, '');
+          let sentMessage: Message;
           try {
             const personalizedMessage = replacePlaceholders(message, phone.variables || {});
             if (body.fileBase64 && body.fileMimeType && body.fileName) {
-              await this.sendSingleMessage({
+              sentMessage = await this.sendSingleMessage({
                 phone: numberPhone,
                 message: personalizedMessage,
                 messageBase64: body.fileBase64,
@@ -144,21 +145,39 @@ export class WhatsappService {
                 fileName: body.fileName,
               });
             } else {
-              await this.sendSingleMessage({ phone: numberPhone, message: personalizedMessage });
+              sentMessage = await this.sendSingleMessage({ phone: numberPhone, message: personalizedMessage });
             }
   
             await this.detailRepo.update(phone.messageId, {
               estado: WsBatchDetailStatus.ENVIADO,
               error: null,
             });
-  
-            await log(`✅ Mensaje enviado a ${numberPhone}`);
+            await log(`✅ Mensaje enviado a ${phone.variables?.nombre || ''} (${numberPhone})`);
+              // 🎯 Verifica el ACK después de 5 segundos SIN bloquear
+            setTimeout(async () => {
+              try {
+                const updatedMsg = await sentMessage?.reload();
+
+                if (updatedMsg.ack < 2) {
+                  await this.detailRepo.update(phone.messageId, {
+                    estado: WsBatchDetailStatus.NO_ENTREGADO,
+                    error: 'Posible número bloqueado o inactivo',
+                  });
+
+                  await log(`⚠️ Mensaje no entregado a ${numberPhone}`);
+                } else {
+                  await log(`✔️ Mensaje entregado a ${numberPhone}`);
+                }
+              } catch (err) {
+                await log(`❌ Error al verificar entrega del mensaje a ${numberPhone}: ${err.message}`);
+              }
+            }, 5000);
           } catch (error) {
             await this.detailRepo.update(phone.messageId, {
               estado: WsBatchDetailStatus.FALLIDO,
               error: (error as any)?.['message'],
             });
-            await log(`❌ Error al enviar a ${numberPhone}: ${(error as any)?.['message']}`);
+            await log(`❌ Error al enviar a ${phone.variables?.nombre || ''} (${numberPhone}): ${(error as any)?.['message']}`);
           }
   
           processedMessages++;
