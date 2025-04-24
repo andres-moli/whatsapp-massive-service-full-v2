@@ -5,6 +5,7 @@ export enum WsBatchStatus {
     EN_PROCESO = 'EN_PROCESO',
     COMPLETADO = 'COMPLETADO',
     FALLIDO = 'FALLIDO',
+    PAUSADO = 'PAUSADO'
 }
 export enum WsBatchDetailStatus {
     ENVIADO = 'ENVIADO',

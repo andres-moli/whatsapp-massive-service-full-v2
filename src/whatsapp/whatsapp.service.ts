@@ -41,7 +41,7 @@ export class WhatsappService {
   }
 
   // Método para enviar un mensaje individual
-  async sendSingleMessage({ phone, message, messageBase64, fileMimeType, fileName  }: { phone: string; message: string, messageBase64?: string;  fileMimeType?: string; fileName?: string;}): Promise<void> {
+  async sendSingleMessage({ phone, message, messageBase64, fileMimeType, fileName  }: { phone: string; message: string, messageBase64?: string;  fileMimeType?: string; fileName?: string;}) {
     try {
       const chatId = `${phone}@c.us`;
       
@@ -59,9 +59,9 @@ export class WhatsappService {
         const fileMimeTypeConvert = extensionToMime[fileExtension] ?? 'application/octet-stream';
         const media = new MessageMedia(fileMimeTypeConvert, messageBase64, fileName);
 
-        await this.client.sendMessage(chatId, media, { caption: message });
+        return await this.client.sendMessage(chatId, media, { caption: message });
       } else {
-        await this.client.sendMessage(chatId, message);
+        return await this.client.sendMessage(chatId, message);
       }
       console.log(`Mensaje enviado a ${phone}`);
     } catch (error) {
@@ -83,21 +83,45 @@ export class WhatsappService {
       this.wsGateway.sendLog(bundleId, msg);
     };
   
+    // Horario laboral permitido: 8 AM a 6 PM
+    const WORK_START_HOUR = 8;
+    const WORK_END_HOUR = 18;
+  
+    // Validación inicial de horario
+    const now = new Date();
+    const currentHour = now.getHours();
+  
+    if (currentHour < WORK_START_HOUR || currentHour >= WORK_END_HOUR) {
+      await log(`🕒 Fuera del horario laboral (actual: ${currentHour}:00). Pausando el lote.`);
+      await this.wsBatchRepo.update(bundleId, { estado: WsBatchStatus.PAUSADO });
+      return;
+    }
+  
     // Envía el progreso inicial (0%)
     this.wsGateway.sendProgress(bundleId, {
       current: 0,
       total: totalMessages,
-      percentage: 0
+      percentage: 0,
     });
   
     for (let i = 0; i < phones.length; i += batchSize) {
       const batch = phones.slice(i, i + batchSize);
-      await log(`📦 Procesando paquete de ${batch.length} números (${i+1}-${Math.min(i+batchSize, totalMessages)}/${totalMessages})...`);
+      await log(`📦 Procesando paquete de ${batch.length} números (${i + 1}-${Math.min(i + batchSize, totalMessages)}/${totalMessages})...`);
   
       for (let j = 0; j < batch.length; j += subBatchSize) {
         const subBatch = batch.slice(j, j + subBatchSize);
   
         for (const phone of subBatch) {
+          const now = new Date();
+          const currentHour = now.getHours();
+  
+          // Verificación dentro del ciclo (por si se pasa el horario en medio de la ejecución)
+          if (currentHour < WORK_START_HOUR || currentHour >= WORK_END_HOUR) {
+            await log(`🕒 Se ha salido del horario laboral (actual: ${currentHour}:00). Pausando el lote.`);
+            await this.wsBatchRepo.update(bundleId, { estado: WsBatchStatus.PAUSADO });
+            return;
+          }
+  
           const numberPhone = phone.phone.replace(/\D/g, '');
           try {
             const personalizedMessage = replacePlaceholders(message, phone.variables || {});
@@ -127,13 +151,12 @@ export class WhatsappService {
             await log(`❌ Error al enviar a ${numberPhone}: ${(error as any)?.['message']}`);
           }
   
-          // Actualizar progreso después de cada mensaje
           processedMessages++;
           const percentage = Math.round((processedMessages / totalMessages) * 100);
           this.wsGateway.sendProgress(bundleId, {
             current: processedMessages,
             total: totalMessages,
-            percentage: percentage
+            percentage,
           });
         }
   
@@ -153,14 +176,14 @@ export class WhatsappService {
   
     await this.wsBatchRepo.update(bundleId, { estado: WsBatchStatus.COMPLETADO });
     await log(`🎉 Todos los mensajes han sido enviados.`);
-    
-    // Enviar progreso completado (100%)
+  
     this.wsGateway.sendProgress(bundleId, {
       current: totalMessages,
       total: totalMessages,
-      percentage: 100
+      percentage: 100,
     });
   }
+  
   
   
 }
